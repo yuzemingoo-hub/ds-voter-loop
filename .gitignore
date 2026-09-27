@@ -1,0 +1,16 @@
+# 运行时与本地产物，不进仓库
+runtime/
+node_modules/
+*.zip
+*.lnk
+
+# 本机截图 / 试探产物
+panel-*.jpg
+probe-*.jpg
+panel-preview.jpg
+
+# 编辑器
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
