@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>自测页（假的投票页）</title>
+<style>
+  body { font: 15px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; background: #f6f7f9; color: #1f2328; margin: 0; padding: 40px; }
+  .box { max-width: 620px; margin: 0 auto; background: #fff; border: 1px solid #d8dee4; border-radius: 12px; padding: 26px 28px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sub { color: #656d76; font-size: 13px; margin-bottom: 20px; }
+  code { background: #f0f2f5; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+  .uuid { font-family: ui-monospace, Consolas, monospace; font-size: 15px; color: #0969da; word-break: break-all; margin: 6px 0 18px; }
+  button { background: #1f883d; color: #fff; border: 0; border-radius: 8px; padding: 10px 22px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.ghost { background: #eef1f4; color: #1f2328; font-weight: 500; margin-left: 8px; }
+  .count { margin-top: 18px; font-size: 14px; color: #1a7f37; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>自测页</h1>
+  <div class="sub">模拟真实投票页：进页面时如果没有 <code id="keyName">ds-vs-ds-voter</code>，就生成一个新 UUID 写进 localStorage。</div>
+
+  <div>本地存储里的投票身份：</div>
+  <div class="uuid" id="uuid">—</div>
+
+  <button id="vote">投票</button>
+  <button class="ghost" id="clearReload">清掉 key 并刷新</button>
+
+  <div class="count" id="count">本次页面已投 0 次</div>
+</div>
+
+<script>
+const key = new URLSearchParams(location.search).get('key') || 'ds-vs-ds-voter';
+document.getElementById('keyName').textContent = key;
+
+let clicks = 0;
+
+function ensureUuid() {
+  let v = null;
+  try { v = localStorage.getItem(key); } catch (e) { /* 隐私模式 */ }
+  if (!v) {
+    v = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2));
+    try { localStorage.setItem(key, v); } catch (e) { /* ignore */ }
+  }
+  document.getElementById('uuid').textContent = v;
+  return v;
+}
+
+const uuid = ensureUuid();
+
+document.getElementById('vote').addEventListener('click', async () => {
+  clicks += 1;
+  document.getElementById('count').textContent = `本次页面已投 ${clicks} 次`;
+  try {
+    const r = await fetch('/api/mock/vote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ uuid: localStorage.getItem(key) }),
+    });
+    const j = await r.json();
+    document.getElementById('count').textContent = `本次页面已投 ${clicks} 次 · 服务端累计 ${j.count} 次`;
+  } catch (e) { /* 离线也能点 */ }
+});
+
+document.getElementById('clearReload').addEventListener('click', () => {
+  localStorage.removeItem(key);
+  location.reload();
+});
+</script>
+</body>
+</html>
