@@ -1,0 +1,22 @@
+{
+ "schema": "ds-voter-loop/manifest/v1",
+ "sealedAt": "2026-09-27T13:58:15.625Z",
+ "algorithm": "sha256",
+ "guardrails": {
+  "forbiddenClickMode": "left",
+  "requiredSelector": "[data-choice=\"right\"]"
+ },
+ "files": {
+  "LICENSE": "6453bb0c18fa44a576fcbdde1cfd91e7f0b95b706a7b8d627d1fe35c553382a8",
+  "lib/browser.mjs": "3e086d31e8c62343d1ff66eff862a17a6f0d8720b9e867b9690d0c2f241b5ea9",
+  "lib/cdp.mjs": "d82f45fecc13d250ea8803ec40d9788b8ecb790b699d259c7f3f316dc0888c0a",
+  "lib/integrity.mjs": "26c84dcb8a9a775cda83910b70863f183d86b99fe717be80260a0c2b8512b758",
+  "lib/looper.mjs": "36ba1264df82f9b0efb5ea365b0b6afe5557aacd5ad3f5fa8bda3e90fe1785ef",
+  "public/index.html": "12b72b8cf4d0265cf0b610ea2e8aa01635fd3a87a9e9279f74640f75898df4da",
+  "public/mock.html": "f23390a07a8cc9b28740c2dc66d5e6eb2959dff0100f2b7cd61334c240455485",
+  "public/mock2.html": "5432c80d7ffb7038c02386de3bafa7a665228b3bb9f59879cba05c3cfe9774f1",
+  "public/mock3.html": "170fa34b8082631eb606d08c70f370a978b7e9962e5749a2be3ec927170aa62d",
+  "server.mjs": "88de268fac60bdb828d22934a56498d24aa700722c508e163fed4159cb06a7fd",
+  "start.cmd": "1826c915190cd3285b1daa5f2644839ac1165b5a86010a2387aded8710036842"
+ }
+}
