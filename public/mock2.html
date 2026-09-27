@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>双按钮自测页（左 vs 右）</title>
+<style>
+  body { font: 15px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; background: #f6f7f9; color: #1f2328; margin: 0; padding: 34px 26px; }
+  h1 { font-size: 19px; margin: 0 0 6px; text-align: center; }
+  .sub { color: #656d76; font-size: 13px; text-align: center; margin-bottom: 22px; }
+  .uuid { text-align: center; font-family: ui-monospace, Consolas, monospace; color: #0969da; margin-bottom: 24px; font-size: 13px; }
+  .cards { display: flex; gap: 22px; justify-content: center; align-items: stretch; max-width: 900px; margin: 0 auto; }
+  .card { flex: 1; background: #fff; border: 1px solid #d8dee4; border-radius: 12px; padding: 18px; text-align: center; }
+  .card h2 { font-size: 16px; margin: 0 0 8px; }
+  .card p { color: #57606a; font-size: 13px; min-height: 42px; }
+  .face { font-size: 42px; }
+  .card button { width: 100%; margin-top: 8px; padding: 12px 0; border: 0; border-radius: 8px; font: inherit; font-size: 15px; cursor: pointer; }
+  #leftBtn { background: #eef1f4; color: #1f2328; }
+  #rightBtn { background: #1f6feb; color: #fff; font-weight: 700; }
+  .tally { max-width: 900px; margin: 22px auto 0; background: #fff; border: 1px solid #d8dee4; border-radius: 12px; padding: 14px 18px; font-size: 14px; }
+  .tally b { color: #1a7f37; }
+</style>
+</head>
+<body>
+<h1>左边 vs <span style="color:#1f6feb">右边</span></h1>
+<div class="sub">模拟「两个长得差不多的投票按钮」：左边是浅色，右边是蓝色（右边才是 deepseek 那一侧）。</div>
+<div class="uuid" id="uuid">—</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="face">🧑‍💼</div>
+    <h2>左边的选手</h2>
+    <p>穿西装的蓝毛。</p>
+    <button id="leftBtn" class="btn-vote">投左边一票</button>
+  </div>
+  <div class="card">
+    <div class="face">🐟</div>
+    <h2>右边的选手（deepseek）</h2>
+    <p>吃白饭的蓝色大肥鱼。</p>
+    <button id="rightBtn" class="btn-vote">投右边一票</button>
+  </div>
+</div>
+
+<div class="tally" id="tally">本次页面还没投过票</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const key = params.get('key') || 'ds-vs-ds-voter';
+const useConfirm = params.get('confirm') !== '0';
+
+let uuid = localStorage.getItem(key);
+if (!uuid) {
+  uuid = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+  localStorage.setItem(key, uuid);
+}
+document.getElementById('uuid').textContent = '本地身份：' + uuid;
+
+let n = 0;
+async function vote(side) {
+  if (useConfirm && !confirm('确认投票给' + (side === 'left' ? '左边' : '右边') + '吗？')) return;
+  n += 1;
+  try {
+    const r = await fetch('/api/mock/vote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ uuid: localStorage.getItem(key), side }),
+    });
+    const j = await r.json();
+    document.getElementById('tally').innerHTML = `本次页面投了 <b>${n}</b> 次 · 服务端收到 <b>${j.count}</b> 次（其中右边 <b>${j.right || 0}</b> 次、左边 <b>${j.left || 0}</b> 次）`;
+  } catch (e) {
+    document.getElementById('tally').textContent = '本次页面投了 ' + n + ' 次（服务端没连上）';
+  }
+}
+
+document.getElementById('leftBtn').addEventListener('click', () => vote('left'));
+document.getElementById('rightBtn').addEventListener('click', () => vote('right'));
+</script>
+</body>
+</html>
