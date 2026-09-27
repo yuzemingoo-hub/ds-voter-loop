@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ds-vs-ds 投票循环器</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2230; --line: #2a3140;
+    --text: #e6edf3; --dim: #8b949e; --accent: #3fb950; --warn: #d29922;
+    --err: #f85149; --info: #58a6ff; --blue: #1f6feb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 22px 22px 60px; }
+
+  header { display: flex; align-items: center; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  header h1 { font-size: 19px; margin: 0; font-weight: 600; }
+  header h1 small { display: block; font-size: 12.5px; color: var(--dim); font-weight: 400; margin-top: 2px; }
+  .pill { margin-left: auto; font-size: 13px; font-weight: 600; padding: 5px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel2); color: var(--dim); white-space: nowrap; }
+  .pill.on { color: #0d1117; background: var(--accent); border-color: var(--accent); }
+  .pill.busy { color: #0d1117; background: var(--warn); border-color: var(--warn); }
+
+  /* 主区：一个目标说明 + 一个大按钮 */
+  .hero { text-align: center; padding: 26px 20px 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .hero .what { font-size: 15px; color: var(--text); margin-bottom: 6px; }
+  .hero .what b { color: var(--info); }
+  .hero .how { font-size: 13px; color: var(--dim); margin-bottom: 20px; line-height: 1.8; }
+  .hero .how code { background: #0b0f14; padding: 1px 6px; border-radius: 5px; color: #ffd479; font-size: 12.5px; }
+  #btnGo {
+    font: 700 21px/1 "Segoe UI", "Microsoft YaHei", sans-serif; color: #fff; background: var(--blue);
+    border: 0; border-radius: 12px; padding: 20px 62px; cursor: pointer; min-width: 260px;
+    box-shadow: 0 6px 22px rgba(31,111,235,.35); transition: transform .08s, background .15s;
+  }
+  #btnGo:hover { background: #2a7ff5; }
+  #btnGo:active { transform: translateY(1px); }
+  #btnGo.stop { background: #b62324; box-shadow: 0 6px 22px rgba(182,35,36,.35); }
+  #btnGo.stop:hover { background: #cf2b2c; }
+  #btnGo:disabled { opacity: .6; cursor: progress; box-shadow: none; }
+  .peek { margin-top: 14px; }
+  .peek button { background: none; border: 0; color: var(--info); font: inherit; font-size: 13.5px; cursor: pointer; text-decoration: underline dotted; }
+  .peek button:hover { color: #9ccbff; }
+  .peek span { color: var(--dim); font-size: 12.5px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 18px 0 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; }
+  .stat .k { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+  .stat .v { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  .stat .v.small { font-size: 13px; font-weight: 500; font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+
+  #offline { display: none; margin-bottom: 12px; padding: 10px 13px; border-radius: 9px; background: #3a2c07; border: 1px solid #6b520f; color: #f0d68a; font-size: 13.5px; }
+  #offline.show { display: block; }
+  .err-box { display: none; margin-bottom: 12px; padding: 10px 13px; border-radius: 9px; background: #3d1418; border: 1px solid #6e2026; color: #ffb4ac; font-size: 13.5px; white-space: pre-wrap; }
+  .err-box.show { display: block; }
+
+  #probeCard { display: none; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  #probeCard.show { display: block; }
+  #probeCard .head { padding: 10px 13px; background: var(--panel2); border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  #probeCard .head b { color: var(--accent); }
+  #probeCard .head code { color: #ffd479; font-size: 12.5px; }
+  #probeShot { display: block; width: 100%; background: #000; }
+  #probeCands { padding: 9px 13px; font-size: 12.5px; color: var(--dim); font-family: ui-monospace, Consolas, monospace; }
+
+  #log { height: 260px; overflow: auto; background: #0b0f14; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px;
+         font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-size: 12.5px; line-height: 1.65; }
+  #log div { white-space: pre-wrap; word-break: break-word; }
+  #log .t { color: #4b5563; margin-right: 8px; }
+  #log .info { color: var(--info); } #log .ok { color: var(--accent); } #log .warn { color: var(--warn); } #log .error { color: var(--err); }
+
+  details.adv { margin-top: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  details.adv > summary { cursor: pointer; padding: 14px 18px; font-size: 14px; color: var(--dim); list-style: none; user-select: none; }
+  details.adv > summary::-webkit-details-marker { display: none; }
+  details.adv > summary::before { content: "▸ "; }
+  details.adv[open] > summary::before { content: "▾ "; }
+  details.adv > summary:hover { color: var(--text); }
+  .adv-body { padding: 4px 18px 20px; border-top: 1px solid var(--line); }
+  .adv-body h3 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); margin: 18px 0 10px; }
+  label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--dim); }
+  input[type=text], input[type=number], select, textarea { width: 100%; margin-top: 5px; padding: 8px 10px; border-radius: 7px; font: inherit;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line); outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--info); }
+  textarea { min-height: 56px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .check { display: inline-flex; align-items: center; gap: 7px; margin: 0 16px 10px 0; color: var(--text); font-size: 13px; }
+  .check input { width: 15px; height: 15px; accent-color: var(--accent); }
+  .checks { display: flex; flex-wrap: wrap; }
+  fieldset { border: 0; padding: 0; margin: 0; }
+  fieldset:disabled { opacity: .55; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .btns button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  .btns button:hover { border-color: var(--info); color: #fff; }
+  #tamper { display: none; margin-bottom: 12px; padding: 12px 15px; border-radius: 9px; background: #3d1418; border: 1px solid #7a232b; color: #ffc2bb; font-size: 13.5px; line-height: 1.75; }
+  #tamper.show { display: block; }
+  #tamper b { color: #ff8b80; }
+  #tamper ul { margin: 6px 0 4px; padding-left: 20px; }
+  #tamper code { background: #1b0f11; padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+  @media (max-width: 620px) { .row { grid-template-columns: 1fr; } #btnGo { width: 100%; padding: 18px 0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>ds-vs-ds 投票循环器
+      <small>清掉本地投票身份 → 刷新 → 等新身份生成 → 点右边那条鱼 → 循环</small>
+    </h1>
+    <span class="pill" id="pill">空闲</span>
+  </header>
+
+  <div id="offline">后台服务已断开 —— 循环已经停了。重新双击桌面「ds投票循环器」再打开本页面。</div>
+  <div id="tamper"></div>
+  <div class="err-box" id="err"></div>
+
+  <section class="hero">
+    <div class="what">目标：<b id="tgtSite">ds-vs-ds.win</b></div>
+    <div class="how" id="tgtHow"></div>
+    <button id="btnGo">开始</button>
+    <div class="peek">
+      <button id="btnPeek">先看一眼（只看不点，不投票）</button>
+      <span>· 会把准备点的按钮画个红框，让你确认没点错人</span>
+    </div>
+  </section>
+
+  <div class="stats">
+    <div class="stat"><div class="k">轮数</div><div class="v" id="stRound">0</div></div>
+    <div class="stat"><div class="k">已确认生效</div><div class="v" id="stConfirmed">0</div></div>
+    <div class="stat"><div class="k">已点击</div><div class="v" id="stClicked">0</div></div>
+    <div class="stat"><div class="k">已用时</div><div class="v" id="stElapsed">0s</div></div>
+    <div class="stat" style="grid-column: span 2"><div class="k">最近的身份 UUID</div><div class="v small" id="stUuid">—</div></div>
+  </div>
+
+  <div id="probeCard">
+    <div class="head" id="probeHead"></div>
+    <img id="probeShot" alt="目标截图" />
+    <div id="probeCands"></div>
+  </div>
+
+  <div id="log"></div>
+  <details class="adv" id="adv">
+    <summary>高级设置（一般不用动，默认已经是真站）</summary>
+    <div class="adv-body">
+      <fieldset id="form">
+      <h3>站点</h3>
+      <label>快速预设
+        <select id="preset">
+          <option value="">手动填写</option>
+          <option value="dsvsds">ds-vs-ds.win（真站：点右边那条鱼）</option>
+          <option value="mock2">自测：左右双按钮页</option>
+          <option value="mock3">自测：仿真站（带安全验证）</option>
+        </select>
+      </label>
+      <label>页面地址<input type="text" id="url" value="https://ds-vs-ds.win/" placeholder="https://example.com/vote" /></label>
+      <label>localStorage 键名 <span style="color:#6b7280;font-size:12px">清掉它就等于换个新身份</span><input type="text" id="key" value="ds-vs-ds-voter" /></label>
+
+      <h3>点哪个</h3>
+      <label>定位方式
+        <select id="clickMode">
+          <option value="selector">按 CSS 选择器（最精确）</option>
+          <option value="right">最右边的那个</option>
+          <option value="nth">第 N 个（按阅读顺序）</option>
+          <option value="auto">自动识别（先猜投票按钮）</option>
+          <option value="text">按按钮文字</option>
+          <option value="js">自定义 JS</option>
+        </select>
+      </label>
+      <label id="clickValueLabel">对应的值<textarea id="clickValue">[data-choice="right"]</textarea></label>
+      <label>护栏选择器 <span style="color:#6b7280;font-size:12px">目标必须匹配它，否则中止（防止点到左边/广告）</span>
+        <input type="text" id="requireSelector" value='[data-choice="right"]' placeholder='[data-choice="right"]' />
+      </label>
+
+      <h3>节奏与确认</h3>
+      <div class="row">
+        <label>每轮间隔 (ms)<input type="number" id="dwellMs" value="1500" min="0" step="100" /></label>
+        <label>单轮超时 (ms)<input type="number" id="loadTimeoutMs" value="20000" min="1000" step="1000" /></label>
+      </div>
+      <div class="row">
+        <label>点击前等可用 (ms) <span style="color:#6b7280;font-size:12px">安全验证</span><input type="number" id="waitClickableMs" value="30000" min="0" step="1000" /></label>
+        <label>点击后确认 (ms) <span style="color:#6b7280;font-size:12px">0=不确认</span><input type="number" id="confirmMs" value="25000" min="0" step="1000" /></label>
+      </div>
+      <div class="row">
+        <label>最大轮数 <span style="color:#6b7280;font-size:12px">0=不限</span><input type="number" id="maxRounds" value="0" min="0" /></label>
+        <label>确认键前缀<input type="text" id="confirmKeyPrefix" value="ds-vs-ds-selection-" /></label>
+      </div>
+      <label>额外清理前缀 <span style="color:#6b7280;font-size:12px">每轮顺带清掉，逗号分隔</span><input type="text" id="clearPrefixes" value="ds-vs-ds-selection-" /></label>
+
+      <h3>浏览器</h3>
+      <div class="row">
+        <label>调试端口<input type="number" id="debugPort" value="9333" /></label>
+        <label>接管已有端口 <span style="color:#6b7280;font-size:12px">填了就不自己开</span><input type="number" id="attachPort" value="0" min="0" /></label>
+      </div>
+      <label>浏览器<select id="exe"><option value="">自动查找</option></select></label>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="realClick" checked />真实鼠标点击</label>
+        <label class="check"><input type="checkbox" id="autoConfirm" checked />自动点掉 confirm 弹窗</label>
+        <label class="check"><input type="checkbox" id="flash" checked />点击前闪红框</label>
+        <label class="check"><input type="checkbox" id="headless" />无头模式（安全验证会失败）</label>
+        <label class="check"><input type="checkbox" id="closeBrowserOnStop" checked />停止时关浏览器</label>
+        <label class="check"><input type="checkbox" id="ignoreCache" />刷新绕过缓存</label>
+      </div>
+      </fieldset>
+
+      <h3>工具</h3>
+      <div class="btns">
+        <button id="btnProbe">试一下（只看不点）</button>
+        <button id="btnProbeClick">真点一次</button>
+        <button id="btnPick">拾取按钮（在页面上点）</button>
+        <button id="btnReset">恢复默认</button>
+        <button id="btnClear">清空日志</button>
+        <button id="btnMock2">打开双按钮自测页</button>
+        <button id="btnMock3">打开仿真站自测页</button>
+        <button id="btnMock">打开单按钮自测页</button>
+        <button id="btnMockStats">看自测页收到几次</button>
+        <button id="btnMockReset">重置自测计数</button>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const FIELDS = ['url','key','clickMode','clickValue','requireSelector','dwellMs','loadTimeoutMs','waitClickableMs','confirmMs','confirmKeyPrefix','clearPrefixes','maxRounds','debugPort','attachPort','exe','realClick','autoConfirm','flash','headless','closeBrowserOnStop','ignoreCache'];
+const CHECKS = ['realClick','autoConfirm','flash','headless','closeBrowserOnStop','ignoreCache'];
+const PLACEHOLDER = {
+  nth: '填序号，1 = 阅读顺序第一个（上到下、左到右），比如 2',
+  text: '填按钮上的原文，比如：喜欢',
+  selector: '填 CSS 选择器，比如：[data-choice="right"]',
+  js: "填脚本，比如：document.querySelector('[data-choice=\"right\"]').click()",
+};
+const PRESETS = {
+  dsvsds: {
+    url: 'https://ds-vs-ds.win/', key: 'ds-vs-ds-voter',
+    clickMode: 'selector', clickValue: '[data-choice="right"]', requireSelector: '[data-choice="right"]',
+    waitClickableMs: '30000', confirmMs: '25000',
+    confirmKeyPrefix: 'ds-vs-ds-selection-', clearPrefixes: 'ds-vs-ds-selection-',
+    dwellMs: '1500', loadTimeoutMs: '20000', headless: false,
+  },
+  mock2: { urlPath: '/mock2.html?confirm=1', key: 'ds-vs-ds-voter', clickMode: 'right', clickValue: '', requireSelector: '#rightBtn', waitClickableMs: '5000', confirmMs: '0', confirmKeyPrefix: '', clearPrefixes: '', maxRounds: '3', dwellMs: '300' },
+  mock3: { urlPath: '/mock3.html?verify=2000', key: 'ds-vs-ds-voter', clickMode: 'selector', clickValue: '[data-choice="right"]', requireSelector: '[data-choice="right"]', waitClickableMs: '15000', confirmMs: '15000', confirmKeyPrefix: 'ds-vs-ds-selection-', clearPrefixes: 'ds-vs-ds-selection-', maxRounds: '3' },
+};
+let serverDefaults = null;
+let formInit = false;
+let lastErrShown = null;
+let running = false;
+let busy = false;
+
+/* ---------- 表单读写 ---------- */
+
+function readForm() {
+  const cfg = {};
+  for (const f of FIELDS) {
+    const el = $(f);
+    if (!el) continue;
+    cfg[f] = CHECKS.includes(f) ? el.checked : el.value.trim();
+  }
+  return cfg;
+}
+
+function applyForm(cfg) {
+  const validMode = [...$('clickMode').options].map((o) => o.value);
+  for (const f of FIELDS) {
+    const el = $(f);
+    if (!el || cfg[f] === undefined || cfg[f] === null) continue;
+    if (f === 'clickMode' && !validMode.includes(String(cfg[f]))) continue;
+    if (CHECKS.includes(f)) el.checked = !!cfg[f];
+    else el.value = cfg[f];
+  }
+  syncClickValue();
+  updateTarget();
+}
+
+function syncClickValue() {
+  const mode = $('clickMode').value;
+  $('clickValueLabel').style.display = ['text', 'selector', 'js', 'nth'].includes(mode) ? 'block' : 'none';
+  $('clickValue').placeholder = PLACEHOLDER[mode] || '';
+}
+
+function initFormFromServer(cfg) {
+  if (formInit || !cfg) return;
+  formInit = true;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('ds-voter-loop-form') || 'null'); } catch { /* ignore */ }
+  const merged = { ...cfg };
+  for (const [k, v] of Object.entries(saved || {})) {
+    if (v === '' || v === null || v === undefined) continue;   // 空值不覆盖默认，免得又变回"地址是空的"
+    merged[k] = v;
+  }
+  applyForm(merged);
+  $('preset').value = merged.url === PRESETS.dsvsds.url ? 'dsvsds' : '';
+}
+
+/** 用大白话把"等一下会发生什么"写出来，新手不用理解配置 */
+function updateTarget() {
+  const url = $('url').value.trim();
+  const mode = $('clickMode').value;
+  const value = $('clickValue').value.trim();
+  let site = '未设置（请展开下面的高级设置填页面地址）';
+  try { if (url) site = new URL(url).host || url; } catch { site = url; }
+  $('tgtSite').textContent = site;
+
+  let how = '';
+  if (mode === 'selector') how = `页面上 <code>${escapeHtml(value || '（没填选择器）')}</code> 这个元素`;
+  else if (mode === 'right') how = '页面上最右边那个按钮';
+  else if (mode === 'left') how = '页面上最左边那个按钮';
+  else if (mode === 'nth') how = `阅读顺序第 ${escapeHtml(value || '?')} 个按钮`;
+  else if (mode === 'text') how = `文字是「${escapeHtml(value || '?')}」的按钮`;
+  else if (mode === 'auto') how = '自动认出来的投票按钮';
+  else how = '自定义脚本指定的目标';
+
+  const max = $('maxRounds').value.trim();
+  const rounds = (!max || max === '0') ? '一直循环到你再点一次停止' : `循环 ${max} 轮后自动停`;
+  $('tgtHow').innerHTML = `会打开 <code>${escapeHtml(url || '…')}</code>，清掉 <code>${escapeHtml($('key').value.trim() || 'ds-vs-ds-voter')}</code> 后刷新页面等它生成新身份，然后点 <b>${how}</b>，${rounds}。`;
+}
+
+function resetForm() {
+  localStorage.removeItem('ds-voter-loop-form');
+  const base = serverDefaults || PRESETS.dsvsds;
+  for (const f of FIELDS) {
+    const el = $(f);
+    if (!el || base[f] === undefined || base[f] === null) continue;
+    if (CHECKS.includes(f)) el.checked = !!base[f];
+    else el.value = base[f];
+  }
+  const textDefaults = { key: 'ds-vs-ds-voter', requireSelector: '[data-choice="right"]', dwellMs: '1500', loadTimeoutMs: '20000', waitClickableMs: '30000', confirmMs: '25000', maxRounds: '0', debugPort: '9333', attachPort: '0', exe: '' };
+  for (const [k, v] of Object.entries(textDefaults)) if ($(k)) $(k).value = v;
+  for (const k of CHECKS) if ($(k)) $(k).checked = k !== 'headless' && k !== 'ignoreCache';
+  syncClickValue();
+  updateTarget();
+  $('err').classList.remove('show');
+  addLog({ t: Date.now(), level: 'info', msg: '已恢复默认（真站 · 点右边那条鱼）' });
+}
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;
+  for (const [k, v] of Object.entries(p)) {
+    if (k === 'urlPath') continue;                     // 自测页地址按当前端口算，不能写死
+    const el = $(k);
+    if (!el) continue;
+    if (CHECKS.includes(k)) el.checked = !!v;
+    else el.value = v;
+  }
+  if (p.urlPath) $('url').value = location.origin + p.urlPath;
+  syncClickValue();
+  updateTarget();
+  localStorage.setItem('ds-voter-loop-form', JSON.stringify(readForm()));
+  addLog({ t: Date.now(), level: 'ok', msg: `已套用预设「${$('preset').selectedOptions[0].textContent}」` });
+}
+
+/* ---------- 界面渲染 ---------- */
+
+function setPill(text, cls) {
+  const p = $('pill');
+  p.textContent = text;
+  p.className = 'pill' + (cls ? ' ' + cls : '');
+}
+
+function renderState(s) {
+  running = s.running;
+  busy = s.busy;
+  if (s.running) setPill('运行中', 'on');
+  else if (s.busy) setPill(s.phase || '处理中', 'busy');
+  else setPill('空闲', '');
+
+  $('btnGo').textContent = s.running ? '停止' : '开始';
+  $('btnGo').className = s.running ? 'stop' : '';
+  $('btnGo').disabled = !!s.busy;
+  $('btnPeek').disabled = s.running || s.busy;
+  $('form').disabled = s.running;
+  for (const id of ['btnProbe', 'btnProbeClick', 'btnPick', 'btnReset', 'btnMock2', 'btnMock3', 'btnMock', 'btnMockStats', 'btnMockReset']) {
+    const b = $(id);
+    if (b) b.disabled = s.running || s.busy;
+  }
+
+  $('stRound').textContent = s.round || 0;
+  $('stConfirmed').textContent = s.confirmed || 0;
+  $('stClicked').textContent = s.clicked || 0;
+  $('stElapsed').textContent = (s.elapsed || 0) + 's';
+  $('stUuid').textContent = s.uuid || '—';
+
+  if (s.browsers) {
+    const sel = $('exe');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">自动查找</option>' + s.browsers.map((b) => `<option value="${b}">${b}</option>`).join('');
+    sel.value = cur;
+  }
+  if (s.lastError && s.lastError !== lastErrShown) { lastErrShown = s.lastError; showErr(s.lastError); }
+}
+
+function showErr(msg) {
+  $('err').textContent = msg;
+  $('err').classList.add('show');
+  addLog({ t: Date.now(), level: 'error', msg: String(msg) });
+}
+
+function addLog(entry) {
+  const hint = $('logHint');
+  if (hint) hint.remove();
+  const el = document.createElement('div');
+  const time = new Date(entry.t).toLocaleTimeString('zh-CN', { hour12: false });
+  el.innerHTML = `<span class="t">${time}</span><span class="${entry.level}">${escapeHtml(entry.msg)}</span>`;
+  const log = $('log');
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  log.appendChild(el);
+  while (log.childElementCount > 800) log.removeChild(log.firstChild);
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function showLogHint() {
+  $('log').innerHTML = '<div id="logHint" style="color:#4b5563">点「开始」后，这里会实时显示每一轮的过程：'
+    + '清了什么、生成了什么新身份、点了哪个按钮、以及有没有确认生效。</div>';
+}
+
+/** 完整性自检没过时，把"这份代码被改过"直接摆在脸上 */
+function renderIntegrity(rep) {
+  const el = $('tamper');
+  if (!rep || rep.ok) { el.classList.remove('show'); return; }
+  const li = [];
+  if (rep.noManifest) li.push('找不到 <code>manifest.json</code>（发布版本自带，被删掉基本说明有人动过代码）');
+  if (rep.changed?.length) li.push('内容被改：' + rep.changed.map((f) => `<code>${escapeHtml(f)}</code>`).join(' '));
+  if (rep.missing?.length) li.push('文件丢失：' + rep.missing.map((f) => `<code>${escapeHtml(f)}</code>`).join(' '));
+  if (rep.added?.length) li.push('多出文件：' + rep.added.map((f) => `<code>${escapeHtml(f)}</code>`).join(' '));
+  if (rep.guardIssues?.length) li.push('安全护栏异常：' + rep.guardIssues.map((g) => escapeHtml(g)).join('；'));
+  el.innerHTML = `<b>⚠️ 这份代码与发布版本不一致（被修改过）</b>`
+    + (li.length ? `<ul>${li.map((x) => `<li>${x}</li>`).join('')}</ul>` : '')
+    + `<div style="margin-top:6px">如果你不是作者本人：本软件的 <code>LICENSE</code> 禁止把它改造成"针对他人网站的刷票工具"、`
+    + `也禁止去掉护栏与自检后再分发。如果你是作者本人：改完后跑 <code>node tools/make-manifest.mjs</code> 重新封存即可。</div>`;
+  el.classList.add('show');
+}
+
+function renderProbe(result, shot) {
+  if (!result || !result.ok) { $('probeCard').classList.remove('show'); return; }
+  const info = result.info || {};
+  $('probeHead').innerHTML = `圈出来的是：<b>&lt;${String(info.tag || '').toLowerCase()}${info.id ? '#' + info.id : ''}&gt;「${escapeHtml(info.text || '')}」</b>`
+    + `<br><code>${escapeHtml(info.selector || '')}</code>`
+    + (result.clicked ? ' <span style="color:#f85149">（已真点一次）</span>' : '');
+  if (shot || result.screenshot) $('probeShot').src = shot || result.screenshot;
+  const cands = result.candidates || [];
+  $('probeCands').innerHTML = cands.length
+    ? '页面上的候选可点元素：<br>' + cands.map((c, i) => {
+        const hit = info.selector && c.selector === info.selector;
+        return `${i + 1}. <span class="${hit ? 'hit' : ''}" style="${hit ? 'color:#3fb950;font-weight:700' : ''}">「${escapeHtml((c.text || c.tag).slice(0, 16))}」${hit ? ' ← 选中' : ''}</span>`;
+      }).join('<br>')
+    : '';
+  $('probeCard').classList.add('show');
+  $('probeCard').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+/* ---------- 动作 ---------- */
+
+async function post(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+  return res.json();
+}
+
+async function toggleRun() {
+  $('err').classList.remove('show');
+  lastErrShown = null;
+  if (running) {
+    $('btnGo').disabled = true;
+    const r = await post('/api/stop');
+    if (!r.ok) { showErr(r.error || '停止失败'); $('btnGo').disabled = false; }
+    return;
+  }
+  const cfg = readForm();
+  if (!cfg.url) { showErr('先填页面地址（展开下面的高级设置）'); $('adv').open = true; return; }
+  showLogHint();
+  $('btnGo').disabled = true;
+  const r = await post('/api/start', cfg);
+  if (!r.ok) { showErr(r.error || '启动失败'); $('btnGo').disabled = false; return; }
+  $('adv').open = false;
+}
+
+async function runProbe(doClick) {
+  $('err').classList.remove('show');
+  lastErrShown = null;
+  const cfg = readForm();
+  if (!cfg.url) { showErr('先填页面地址（展开下面的高级设置）'); $('adv').open = true; return; }
+  cfg.doClick = !!doClick;
+  showLogHint();
+  const r = await post('/api/probe', cfg);
+  if (!r.ok) { showErr(r.error || '试探失败'); return; }
+  renderProbe(r.result, null);
+  if (!r.result.ok) showErr('定位失败：' + r.result.reason);
+}
+
+async function runPick() {
+  $('err').classList.remove('show');
+  lastErrShown = null;
+  const cfg = readForm();
+  if (!cfg.url) { showErr('先填页面地址'); $('adv').open = true; return; }
+  showLogHint();
+  addLog({ t: Date.now(), level: 'info', msg: '浏览器窗口已打开 —— 去那个窗口里点一下你要点的按钮（Esc 取消）' });
+  const r = await post('/api/pick', cfg);
+  if (!r.ok) { showErr(r.error || '拾取失败'); return; }
+  if (!r.result.ok) { showErr('拾取结束：' + r.result.reason); return; }
+  $('clickMode').value = 'selector';
+  $('clickValue').value = r.result.info.selector;
+  syncClickValue();
+  updateTarget();
+  localStorage.setItem('ds-voter-loop-form', JSON.stringify(readForm()));
+  renderProbe(r.result, null);
+  addLog({ t: Date.now(), level: 'ok', msg: `已把定位方式改成「按 CSS 选择器」：${r.result.info.selector}` });
+}
+
+function openMock(pathname, withConfirm) {
+  const u = new URL(pathname, location.href);
+  u.searchParams.set('key', $('key').value.trim() || 'ds-vs-ds-voter');
+  if (withConfirm) u.searchParams.set('confirm', '1');
+  window.open(u.toString(), '_blank');
+}
+
+/* ---------- 事件 ---------- */
+
+$('btnGo').addEventListener('click', toggleRun);
+$('btnPeek').addEventListener('click', () => runProbe(false));
+$('btnProbe').addEventListener('click', () => runProbe(false));
+$('btnProbeClick').addEventListener('click', () => runProbe(true));
+$('btnPick').addEventListener('click', runPick);
+$('btnReset').addEventListener('click', resetForm);
+$('btnClear').addEventListener('click', () => { showLogHint(); });
+$('btnMock2').addEventListener('click', () => openMock('/mock2.html', true));
+$('btnMock3').addEventListener('click', () => openMock('/mock3.html', false));
+$('btnMock').addEventListener('click', () => openMock('/mock.html', false));
+$('btnMockStats').addEventListener('click', async () => {
+  const r = await fetch('/api/mock/stats').then((x) => x.json());
+  addLog({ t: Date.now(), level: 'ok', msg: `自测页累计收到 ${r.count} 次点击/投票${r.right || r.left ? `（右边 ${r.right} 次 / 左边 ${r.left} 次）` : ''}` });
+});
+$('btnMockReset').addEventListener('click', async () => { await post('/api/mock/reset'); addLog({ t: Date.now(), level: 'info', msg: '自测计数已归零' }); });
+$('preset').addEventListener('change', () => { if ($('preset').value) applyPreset($('preset').value); });
+$('clickMode').addEventListener('change', () => { syncClickValue(); updateTarget(); });
+for (const f of FIELDS) {
+  const el = $(f);
+  if (!el) continue;
+  el.addEventListener('change', () => {
+    updateTarget();
+    localStorage.setItem('ds-voter-loop-form', JSON.stringify(readForm()));
+  });
+  el.addEventListener('input', updateTarget);
+}
+
+/* ---------- 实时连接 ---------- */
+
+const es = new EventSource('/api/events');
+es.onopen = () => { $('offline').classList.remove('show'); };
+es.onmessage = (ev) => {
+  const msg = JSON.parse(ev.data);
+  if (msg.type === 'hello') {
+    serverDefaults = msg.state.config || null;
+    initFormFromServer(serverDefaults);
+    renderState(msg.state);
+    renderIntegrity(msg.state.integrity);
+    showLogHint();
+    (msg.logs || []).forEach(addLog);
+    if (msg.state.probe && msg.probeShot) renderProbe({ ...msg.state.probe, screenshot: msg.probeShot }, msg.probeShot);
+  } else if (msg.type === 'log') {
+    addLog(msg.entry);
+  } else if (msg.type === 'status') {
+    renderState(msg.state);
+  } else if (msg.type === 'probe') {
+    renderProbe(msg.result, null);
+    if (!msg.ok && msg.error) showErr('定位失败：' + msg.error);
+  }
+};
+es.onerror = () => { $('offline').classList.add('show'); };
+
+syncClickValue();
+updateTarget();
+</script>
+</body>
+</html>
