@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>ds-vs-ds 仿站自测页（带安全验证 + selection 键）</title>
+<style>
+  body { font: 15px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; background: #f7f8fa; color: #1f2328; margin: 0; padding: 28px 24px; }
+  h1 { font-size: 19px; text-align: center; margin: 0 0 4px; }
+  .sub { text-align: center; color: #656d76; font-size: 13px; margin-bottom: 20px; }
+  .row { display: flex; gap: 20px; justify-content: center; max-width: 900px; margin: 0 auto; }
+  article { flex: 1; background: #fff; border: 1px solid #d8dee4; border-radius: 12px; padding: 16px; text-align: center; }
+  article img { width: 100%; height: 150px; object-fit: contain; background: #eef2f7; border-radius: 8px; }
+  article h2 { font-size: 15px; margin: 10px 0 12px; }
+  article button { width: 100%; padding: 12px 0; border: 1px solid #d0d7de; border-radius: 8px; font: inherit; font-size: 15px; cursor: pointer; background: #fff; }
+  article button.selected { background: #1f6feb; border-color: #1f6feb; color: #fff; font-weight: 700; }
+  article button[disabled] { opacity: .55; cursor: not-allowed; }
+  .status { text-align: center; margin-top: 20px; color: #57606a; font-size: 14px; }
+  .tally { max-width: 900px; margin: 14px auto 0; background: #fff; border: 1px solid #d8dee4; border-radius: 10px; padding: 12px 16px; font-size: 14px; }
+  .tally b { color: #1a7f37; }
+</style>
+</head>
+<body>
+<h1>你更喜欢哪一个 测试 形象？</h1>
+<div class="sub">仿 ds-vs-ds.win：按钮上有 <code>data-choice</code>，加载后要「安全验证」2 秒才可点，投完写 <code>ds-vs-ds-selection-&lt;id&gt;</code>。</div>
+
+<div class="row">
+  <article>
+    <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='150'><rect width='300' height='150' fill='%23dfe7f1'/><text x='150' y='85' font-size='52' text-anchor='middle'>🧑‍💼</text></svg>" alt="左边：西装蓝毛" />
+    <h2>左边的选手</h2>
+    <button data-choice="left">喜欢</button>
+  </article>
+  <article>
+    <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='150'><rect width='300' height='150' fill='%23dfe7f1'/><text x='150' y='85' font-size='52' text-anchor='middle'>🐟</text></svg>" alt="右边：吃白饭的蓝色大肥鱼" />
+    <h2>右边的选手（deepseek）</h2>
+    <button data-choice="right">喜欢</button>
+  </article>
+</div>
+
+<div class="status" id="status">正在进行安全验证…</div>
+<div class="tally" id="tally">本次页面还没投过票</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const KEY = params.get('key') || 'ds-vs-ds-voter';
+const VERIFY_MS = Number(params.get('verify') || 2000);   // 模拟 Turnstile 验证耗时
+const SUBMIT_MS = Number(params.get('submit') || 400);
+
+const buttons = [...document.querySelectorAll('[data-choice]')];
+const status = document.getElementById('status');
+let voterId, token = '', submitting = false, selected = null;
+
+// 1) 身份：必须是 UUID，否则重新生成（和真站一致）
+voterId = localStorage.getItem(KEY);
+if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voterId || '')) {
+  voterId = crypto.randomUUID();
+  localStorage.setItem(KEY, voterId);
+}
+try {
+  const saved = JSON.parse(localStorage.getItem(`ds-vs-ds-selection-${voterId}`));
+  if (saved === 'left' || saved === 'right') selected = saved;
+} catch (e) { /* ignore */ }
+
+function updateButtons() {
+  for (const b of buttons) {
+    const choice = b.dataset.choice;
+    b.disabled = submitting || !token || selected !== null;
+    b.classList.toggle('selected', selected === choice);
+    b.textContent = selected === choice ? '已投票' : '喜欢';
+  }
+  if (selected !== null) status.textContent = '已收到你的一票，谢谢参与。';
+}
+
+// 2) 模拟 Turnstile：过一会儿才给 token
+setTimeout(() => { token = 'fake-turnstile-token-' + voterId; status.textContent = '选一个你喜欢的形象。'; updateButtons(); }, VERIFY_MS);
+
+async function vote(choice) {
+  if (submitting || selected !== null || !token) return;
+  submitting = true;
+  status.textContent = '正在提交你的一票…';
+  updateButtons();
+  await new Promise((r) => setTimeout(r, SUBMIT_MS));
+  try {
+    const r = await fetch('/api/mock/vote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'X-Voter-ID': voterId },
+      body: JSON.stringify({ uuid: voterId, choice, side: choice, token }),
+    });
+    const j = await r.json();
+    selected = choice;
+    localStorage.setItem(`ds-vs-ds-selection-${voterId}`, JSON.stringify(choice));
+    document.getElementById('tally').innerHTML = `服务端收到 <b>${j.count}</b> 票（右 <b>${j.right}</b> / 左 <b>${j.left}</b>）`;
+  } catch (e) {
+    status.textContent = '提交失败，请稍后重试。';
+  } finally {
+    submitting = false;
+    updateButtons();
+  }
+}
+
+for (const b of buttons) b.addEventListener('click', () => void vote(b.dataset.choice));
+updateButtons();
+</script>
+</body>
+</html>
